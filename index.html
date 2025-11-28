@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Koni Açılımı Rechner</title>
+    <style>
+        body { margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        input { width: 100px; padding: 6px; margin: 4px 0; border: 1px solid #d1d5db; border-radius: 4px; }
+        label { font-weight: 500; font-size: 14px; }
+        button { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; }
+        button:hover { background: #2563eb; }
+        svg { border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .results { background: white; padding: 16px; border-radius: 8px; margin-top: 12px; font-family: monospace; font-size: 14px; }
+        .flex { display: flex; gap: 24px; align-items: flex-start; }
+        @media (max-width: 768px) { .flex { flex-direction: column; } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <!-- React + ReactDOM + Babel (CDN) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        function App() {
+            const [dB, setDB] = React.useState(200);
+            const [dT, setDT] = React.useState(80);
+            const [h, setH] = React.useState(150);
+            const [allowance, setAllowance] = React.useState(10);
+
+            function compute() {
+                const rB = dB / 2.0;
+                const rT = dT / 2.0;
+                const s = Math.hypot(h, rB - rT);
+                const rOuter = s;
+                const rInner = rOuter * (rT / rB);
+                const angleDeg = (360.0 * rB) / rOuter;
+                const outerArc = 2 * Math.PI * rB;
+                const innerArc = 2 * Math.PI * rT;
+                return { rB, rT, s, rOuter, rInner, angleDeg, outerArc, innerArc };
+            }
+
+            const vals = compute();
+            const previewSize = 420;
+            const scale = vals.rOuter > 0 ? ((previewSize / 2) * 0.85) / vals.rOuter : 1;
+            const cx = previewSize / 2;
+            const cy = previewSize / 2;
+            const startAngleRad = 0;
+            const endAngleRad = (vals.angleDeg * Math.PI) / 180.0;
+
+            function sectorPath(rOut, rIn, angleRad, scaleFactor) {
+                const largeArc = angleRad > Math.PI ? 1 : 0;
+                const x1o = cx + rOut * Math.cos(0) * scaleFactor;
+                const y1o = cy + rOut * Math.sin(0) * scaleFactor;
+                const x2o = cx + rOut * Math.cos(angleRad) * scaleFactor;
+                const y2o = cy + rOut * Math.sin(angleRad) * scaleFactor;
+                const x2i = cx + rIn * Math.cos(angleRad) * scaleFactor;
+                const y2i = cy + rIn * Math.sin(angleRad) * scaleFactor;
+                const x1i = cx + rIn * Math.cos(0) * scaleFactor;
+                const y1i = cy + rIn * Math.sin(0) * scaleFactor;
+
+                return `M ${x1o} ${y1o} A ${rOut*scaleFactor} ${rOut*scaleFactor} 0 ${largeArc} 1 ${x2o} ${y2o} L ${x2i} ${y2i} A ${rIn*scaleFactor} ${rIn*scaleFactor} 0 ${largeArc} 0 ${x1i} ${y1i} Z`;
+            }
+
+            function seamRectPoints(rOut, rIn, allowanceMm, scaleFactor) {
+                const ox = cx + rOut * scaleFactor;
+                const oy = cy + 0;
+                const ix = cx + rIn * scaleFactor;
+                const iy = cy + 0;
+                const outwardX = 0;
+                const outwardY = -1;
+                const adv = allowanceMm * scaleFactor;
+                const ox2 = ox + outwardX * adv;
+                const oy2 = oy + outwardY * adv;
+                const ix2 = ix + outwardX * adv;
+                const iy2 = iy + outwardY * adv;
+                return {
+                    outerStart: { x: ox, y: oy },
+                    innerStart: { x: ix, y: iy },
+                    outerExtended: { x: ox2, y: oy2 },
+                    innerExtended: { x: ix2, y: iy2 },
+                };
+            }
+
+            function downloadSVG() {
+                const rOut = vals.rOuter;
+                const rIn = vals.rInner;
+                const angleDeg = vals.angleDeg;
+                const angleRad = (angleDeg * Math.PI) / 180.0;
+                const allow = allowance;
+                const rMax = rOut + allow + 5;
+                const cxmm = rMax;
+                const cymm = rMax;
+
+                function ptOn(r, theta) {
+                    return { x: cxmm + r * Math.cos(theta), y: cymm + r * Math.sin(theta) };
+                }
+
+                const o1 = ptOn(rOut, 0);
+                const o2 = ptOn(rOut, angleRad);
+                const i2 = ptOn(rIn, angleRad);
+                const i1 = ptOn(rIn, 0);
+
+                const nx = 0;
+                const ny = -1;
+                const o1_ext = { x: o1.x + nx * allow, y: o1.y + ny * allow };
+                const i1_ext = { x: i1.x + nx * allow, y: i1.y + ny * allow };
+
+                const largeArc = angleRad > Math.PI ? 1 : 0;
+                const sectorPath = [
+                    `M ${o1.x.toFixed(4)} ${o1.y.toFixed(4)}`,
+                    `A ${rOut.toFixed(4)} ${rOut.toFixed(4)} 0 ${largeArc} 1 ${o2.x.toFixed(4)} ${o2.y.toFixed(4)}`,
+                    `L ${i2.x.toFixed(4)} ${i2.y.toFixed(4)}`,
+                    `A ${rIn.toFixed(4)} ${rIn.toFixed(4)} 0 ${largeArc} 0 ${i1.x.toFixed(4)} ${i1.y.toFixed(4)}`,
+                    'Z'
+                ].join(' ');
+
+                const seamPoly = [
+                    `${i1.x.toFixed(4)},${i1.y.toFixed(4)}`,
+                    `${o1.x.toFixed(4)},${o1.y.toFixed(4)}`,
+                    `${o1_ext.x.toFixed(4)},${o1_ext.y.toFixed(4)}`,
+                    `${i1_ext.x.toFixed(4)},${i1_ext.y.toFixed(4)}`
+                ].join(' ');
+
+                const svg = `<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${(rMax*2).toFixed(4)}mm" height="${(rMax*2).toFixed(4)}mm" viewBox="0 0 ${(rMax*2).toFixed(4)} ${(rMax*2).toFixed(4)}">
+  <path d="${sectorPath}" fill="none" stroke="#000" stroke-width="0.5"/>
+  <polygon points="${seamPoly}" fill="none" stroke="red" stroke-width="0.5"/>
+  ircle cx="${cxmm.toFixed(4)}" cy="${cymm.toFixed(4)}" r="${rOut.toFixed(4)}" fill="none" stroke="none"/>
+</svg>`;
+
+                const blob = new Blob([svg], { type: 'image/svg+xml' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'cone_pattern_with_seam_mm.svg';
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
+            const seamPts = seamRectPoints(vals.rOuter, vals.rInner, allowance, scale);
+
+            return (
+                <div className="container">
+                    <h1 style={{ color: '#1e293b', marginBottom: 8 }}>🛠️ Koni Açılımı Rechner + Dikiş Payı</h1>
+                    
+                    <div className="flex">
+                        <div style={{ minWidth: 220 }}>
+                            <label>Alt çap dB (mm):<br/>
+                                <input type="number" value={dB} onChange={e => setDB(+e.target.value)} min="1" /></label><br/>
+                            <label>Üst çap dT (mm):<br/>
+                                <input type="number" value={dT} onChange={e => setDT(+e.target.value)} min="1" /></label><br/>
+                            <label>Yükseklik h (mm):<br/>
+                                <input type="number" value={h} onChange={e => setH(+e.target.value)} min="1" /></label><br/>
+                            <label>Dikiş payı (mm):<br/>
+                                <input type="number" value={allowance} onChange={e => setAllowance(+e.target.value)} min="0" /></label><br/><br/>
+                            <button onClick={downloadSVG}>📥 SVG İndir (1:1 mm)</button>
+                        </div>
+
+                        <div>
+                            <svg width={previewSize} height={previewSize} viewBox={`0 0 ${previewSize} ${previewSize}`}>
+                                <path d={sectorPath(vals.rOuter, vals.rInner, endAngleRad, scale)} fill="#dbeafe" stroke="#0b5668" strokeWidth={1}/>
+                                <polygon
+                                    points={`
+                                        ${seamPts.innerStart.x},${seamPts.innerStart.y}
+                                        ${seamPts.outerStart.x},${seamPts.outerStart.y}
+                                        ${seamPts.outerExtended.x},${seamPts.outerExtended.y}
+                                        ${seamPts.innerExtended.x},${seamPts.innerExtended.y}
+                                    `}
+                                    fill="rgba(255,0,0,0.12)"
+                                    stroke="red"
+                                    strokeWidth={1}
+                                />
+                                <line x1={seamPts.innerStart.x} y1={seamPts.innerStart.y} x2={seamPts.outerStart.x} y2={seamPts.outerStart.y} stroke="#222" strokeWidth={1}/>
+                            </svg>
+
+                            <div className="results">
+                                <b>Hesaplar:</b><br/>
+                                Dış yarıçap R = {vals.rOuter.toFixed(1)} mm<br/>
+                                İç yarıçap = {vals.rInner.toFixed(1)} mm<br/>
+                                Sector açı = {vals.angleDeg.toFixed(1)}°<br/>
+                                Alt yay = {vals.outerArc.toFixed(1)} mm<br/>
+                                Üst yay = {vals.innerArc.toFixed(1)} mm
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
